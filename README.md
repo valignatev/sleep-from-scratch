@@ -1,8 +1,10 @@
 This is a completely standalone sleep implementation for x86_64 Linux that depends only on the Linux kernel.
 
-I made it for my YouTube video which you can find here:
+Made by valignatev. Their YouTube video can be found below:
 
 https://www.youtube.com/watch?v=IbibjkI1kIs
+
+Rust implementation by Nekrolm, C++ implementation by babafun.
 
 Sources:
 
@@ -22,4 +24,6 @@ Build:
 rustc -o sleep_rs ./sleep.rs --edition=2024 -Copt-level=3 -Clink-arg=-nostartfiles  -Cpanic=abort -Cstrip=debuginfo
 
 gcc -o sleep_c -O3 -nolibc -fno-stack-protector -nostartfiles sleep.c
+
+g++ -O3 -s -static -nostdlib -nostartfiles -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -Wl,--gc-sections -Wl,-nmagic -o sleep_cpp sleep.cpp
 ```
