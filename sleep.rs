@@ -121,7 +121,7 @@ extern "C" fn exit(code: c_int) -> ! {
 
 fn print(s: &str) {
     unsafe {
-        syscall3(SYS_WRITE, 1, s.as_ptr().addr() as c_long, s.len() as c_long);
+        syscall3(SYS_WRITE, 1, s.as_ptr() as c_long, s.len() as c_long);
     }
 }
 
