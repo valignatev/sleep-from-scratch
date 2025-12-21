@@ -1,14 +1,16 @@
 #![no_main]
 #![no_std]
+#![warn(clippy::all)]
 
-use core::ffi::c_char;
-use core::ffi::c_int;
-use core::ffi::c_long;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+compile_error!(
+    "This program only supports Linux x86_64; freestanding syscalls will not work on other OSes."
+);
 
-use core::ptr::NonNull;
-
-use core::time::Duration;
-
+use core::{
+    ffi::{c_char, c_int, c_long},
+    time::Duration,
+};
 
 const EXIT_SUCCESS: c_int = 0;
 const EXIT_FAILURE: c_int = 1;
@@ -17,119 +19,122 @@ const SYS_WRITE: c_long = 1;
 const SYS_EXIT: c_long = 60;
 const SYS_NANOSLEEP: c_long = 35;
 
+enum SleepError {
+    MissingArgument,
+    NonUtf8,
+    InvalidInterval(*const c_char),
+}
 
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    loop {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rust_eh_personality() -> ! {
-    loop {}
+    loop {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
+    }
 }
 
-
+#[inline(always)]
 unsafe fn syscall1(number: c_long, arg1: c_long) -> c_long {
     let result: c_long;
-    unsafe { core::arch::asm!(
-        "syscall",
-        inlateout("rax") number => result,
-        in("rdi") arg1,
-        lateout("rcx") _,
-        lateout("r11") _, 
-        options(nostack, preserves_flags)
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            inlateout("rax") number => result,
+            in("rdi") arg1,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack)
+        );
     }
     result
 }
 
-
+#[inline(always)]
 unsafe fn syscall2(number: c_long, arg1: c_long, arg2: c_long) -> c_long {
     let result: c_long;
-    unsafe { core::arch::asm!(
-        "syscall",
-        inlateout("rax") number => result,
-        in("rdi") arg1,
-        in("rsi") arg2,
-        lateout("rcx") _,
-        lateout("r11") _, 
-        options(nostack, preserves_flags)
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            inlateout("rax") number => result,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack)
+        );
     }
     result
 }
 
+#[inline(always)]
 unsafe fn syscall3(number: c_long, arg1: c_long, arg2: c_long, arg3: c_long) -> c_long {
     let result: c_long;
-    unsafe { core::arch::asm!(
-        "syscall",
-        inlateout("rax") number => result,
-        in("rdi") arg1,
-        in("rsi") arg2,
-        in("rdx") arg3,
-        lateout("rcx") _,
-        lateout("r11") _, 
-        options(nostack, preserves_flags)
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            inlateout("rax") number => result,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack)
+        );
     }
     result
 }
 
-
 fn sleep(dur: Duration) {
-
     #[repr(C)]
     struct Timespec {
         tv_sec: c_long,
         tv_nsec: c_long,
-    } 
+    }
 
     const SECOND: u128 = 1_000_000_000;
 
-    let nanos =  dur.as_nanos();
+    let nanos = dur.as_nanos();
     let secs = nanos / SECOND;
     let nanos = nanos % SECOND;
 
-
     let ts = Timespec {
-        tv_sec: secs as _ ,
-        tv_nsec: nanos as _ ,
+        tv_sec: secs as c_long,
+        tv_nsec: nanos as c_long,
     };
 
-    unsafe {
-        syscall2(
-            SYS_NANOSLEEP, (&raw const ts) as _, 0
-        )
-    };
-
+    unsafe { syscall2(SYS_NANOSLEEP, (&raw const ts) as c_long, 0) };
 }
-
 
 #[unsafe(no_mangle)]
 extern "C" fn exit(code: c_int) -> ! {
     unsafe { syscall1(SYS_EXIT, code as c_long) };
-    loop {}
-}
-
-
-fn print(s: &str) {
-    unsafe {
-        syscall3(SYS_WRITE, 1, s.as_ptr().addr() as c_long, s.len() as c_long);
+    loop {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
     }
 }
 
-#[unsafe(no_mangle)]
-unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    match unsafe { main_impl(core::slice::from_raw_parts(argv as *const NonNull<c_char>, argc as usize)) } {
-        Ok(_) => EXIT_SUCCESS,
-        Err(_) => EXIT_FAILURE, 
+fn print(s: &str) {
+    unsafe {
+        syscall3(SYS_WRITE, 1, s.as_ptr() as c_long, s.len() as c_long);
     }
 }
 
 // We need strlen because rustc on opt-level 2+ tries to replace
 // strlen-like code with strlen call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn strlen(s: NonNull<c_char>) -> usize {
+unsafe extern "C" fn strlen(s: *const c_char) -> usize {
     let mut cursor = s;
     unsafe {
         while cursor.read() != 0 {
@@ -138,35 +143,64 @@ unsafe extern "C" fn strlen(s: NonNull<c_char>) -> usize {
     }
 
     unsafe { cursor.offset_from(s) as usize }
-} 
-
-unsafe fn bytes_from_nullterminated<'a>(ptr: NonNull<c_char>) -> &'a[u8] {
-    
-    let len = unsafe { strlen(ptr) };
-
-    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>().as_ptr(), len) }
 }
 
-unsafe fn main_impl(args: &[NonNull<c_char>]) -> Result<(), ()> {
-    
+unsafe fn bytes_from_nullterminated<'a>(ptr: *const c_char) -> &'a [u8] {
+    let len = unsafe { strlen(ptr) };
+
+    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
+}
+
+fn report_error(err: SleepError) {
+    match err {
+        SleepError::MissingArgument => {
+            print("Usage: sleep NUMBER\nPause for NUMBER seconds\n");
+        }
+        SleepError::NonUtf8 => {
+            print("sleep: invalid input - non-UTF8 bytes not supported\n");
+        }
+        SleepError::InvalidInterval(ptr) => unsafe {
+            // SAFETY:
+            // `ptr` originates from argv[1], which is guaranteed
+            // valid and null-terminated for the program lifetime.
+            let bytes = bytes_from_nullterminated(ptr);
+            let s = core::str::from_utf8_unchecked(bytes);
+
+            print("sleep: invalid time interval '");
+            print(s);
+            print("'\n");
+        },
+    }
+}
+
+unsafe fn main_impl(args: &[*const c_char]) -> Result<(), SleepError> {
     let Some(&sleep_duration) = args.get(1) else {
-        print("Usage: sleep SECONDS\n");
-        return Err(());
+        return Err(SleepError::MissingArgument);
     };
 
     let sleep_duration_bytes = unsafe { bytes_from_nullterminated(sleep_duration) };
+    let sleep_duration_str =
+        core::str::from_utf8(sleep_duration_bytes).map_err(|_| SleepError::NonUtf8)?;
 
-    let Ok(sleep_duration_str) = str::from_utf8(sleep_duration_bytes) else {
-        print("I dont work with non-UTF8 stuff\n");
-        return Err(());
-    };
+    let sleep_duration_int: u64 = sleep_duration_str
+        .parse()
+        .map_err(|_| SleepError::InvalidInterval(sleep_duration))?;
 
-    let sleep_duration_int : u32 = sleep_duration_str.parse()
-        .inspect_err(|_| print("parameter should be integer\n"))
-        .map_err(|_|())?;
-
-    sleep(Duration::from_secs(sleep_duration_int as _));
+    sleep(Duration::from_secs(sleep_duration_int));
     Ok(())
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
+    let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+
+    match unsafe { main_impl(args) } {
+        Ok(()) => EXIT_SUCCESS,
+        Err(err) => {
+            report_error(err);
+            EXIT_FAILURE
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
