@@ -23,7 +23,7 @@ const SYS_NANOSLEEP: c_long = 35;
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {
         unsafe {
-            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+            core::arch::asm!("hlt", options(nomem, nostack));
         }
     }
 }
@@ -32,7 +32,7 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
 extern "C" fn rust_eh_personality() -> ! {
     loop {
         unsafe {
-            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+            core::arch::asm!("hlt", options(nomem, nostack));
         }
     }
 }
@@ -114,7 +114,7 @@ extern "C" fn exit(code: c_int) -> ! {
     unsafe { syscall1(SYS_EXIT, code as c_long) };
     loop {
         unsafe {
-            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+            core::arch::asm!("hlt", options(nomem, nostack));
         }
     }
 }
