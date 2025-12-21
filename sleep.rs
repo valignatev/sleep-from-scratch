@@ -37,6 +37,7 @@ extern "C" fn rust_eh_personality() -> ! {
     }
 }
 
+#[inline(always)]
 unsafe fn syscall1(number: c_long, arg1: c_long) -> c_long {
     let result: c_long;
     unsafe {
@@ -52,6 +53,7 @@ unsafe fn syscall1(number: c_long, arg1: c_long) -> c_long {
     result
 }
 
+#[inline(always)]
 unsafe fn syscall2(number: c_long, arg1: c_long, arg2: c_long) -> c_long {
     let result: c_long;
     unsafe {
@@ -68,6 +70,7 @@ unsafe fn syscall2(number: c_long, arg1: c_long, arg2: c_long) -> c_long {
     result
 }
 
+#[inline(always)]
 unsafe fn syscall3(number: c_long, arg1: c_long, arg2: c_long, arg3: c_long) -> c_long {
     let result: c_long;
     unsafe {
