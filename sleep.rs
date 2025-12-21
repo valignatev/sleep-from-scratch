@@ -9,7 +9,6 @@ compile_error!(
 
 use core::{
     ffi::{c_char, c_int, c_long},
-    ptr::NonNull,
     time::Duration,
 };
 
@@ -125,12 +124,7 @@ fn print(s: &str) {
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    match unsafe {
-        main_impl(core::slice::from_raw_parts(
-            argv as *const NonNull<c_char>,
-            argc as usize,
-        ))
-    } {
+    match unsafe { main_impl(core::slice::from_raw_parts(argv, argc as usize)) } {
         Ok(_) => EXIT_SUCCESS,
         Err(_) => EXIT_FAILURE,
     }
@@ -139,7 +133,7 @@ unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
 // We need strlen because rustc on opt-level 2+ tries to replace
 // strlen-like code with strlen call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn strlen(s: NonNull<c_char>) -> usize {
+unsafe extern "C" fn strlen(s: *const c_char) -> usize {
     let mut cursor = s;
     unsafe {
         while cursor.read() != 0 {
@@ -150,13 +144,13 @@ unsafe extern "C" fn strlen(s: NonNull<c_char>) -> usize {
     unsafe { cursor.offset_from(s) as usize }
 }
 
-unsafe fn bytes_from_nullterminated<'a>(ptr: NonNull<c_char>) -> &'a [u8] {
+unsafe fn bytes_from_nullterminated<'a>(ptr: *const c_char) -> &'a [u8] {
     let len = unsafe { strlen(ptr) };
 
-    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>().as_ptr(), len) }
+    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
 }
 
-unsafe fn main_impl(args: &[NonNull<c_char>]) -> Result<(), ()> {
+unsafe fn main_impl(args: &[*const c_char]) -> Result<(), ()> {
     let Some(&sleep_duration) = args.get(1) else {
         print("Usage: sleep NUMBER\nPause for NUMBER seconds\n");
         return Err(());
