@@ -131,17 +131,24 @@ fn print(s: &str) {
     }
 }
 
+// We need strlen because rustc on opt-level 2+ tries to replace
+// strlen-like code with strlen call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
-
-    match unsafe { main_impl(args) } {
-        Ok(()) => EXIT_SUCCESS,
-        Err(err) => {
-            report_error(err);
-            EXIT_FAILURE
+unsafe extern "C" fn strlen(s: *const c_char) -> usize {
+    let mut cursor = s;
+    unsafe {
+        while cursor.read() != 0 {
+            cursor = cursor.add(1);
         }
     }
+
+    unsafe { cursor.offset_from(s) as usize }
+}
+
+unsafe fn bytes_from_nullterminated<'a>(ptr: *const c_char) -> &'a [u8] {
+    let len = unsafe { strlen(ptr) };
+
+    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
 }
 
 fn report_error(err: SleepError) {
@@ -166,26 +173,6 @@ fn report_error(err: SleepError) {
     }
 }
 
-// We need strlen because rustc on opt-level 2+ tries to replace
-// strlen-like code with strlen call
-#[unsafe(no_mangle)]
-unsafe extern "C" fn strlen(s: *const c_char) -> usize {
-    let mut cursor = s;
-    unsafe {
-        while cursor.read() != 0 {
-            cursor = cursor.add(1);
-        }
-    }
-
-    unsafe { cursor.offset_from(s) as usize }
-}
-
-unsafe fn bytes_from_nullterminated<'a>(ptr: *const c_char) -> &'a [u8] {
-    let len = unsafe { strlen(ptr) };
-
-    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
-}
-
 unsafe fn main_impl(args: &[*const c_char]) -> Result<(), SleepError> {
     let Some(&sleep_duration) = args.get(1) else {
         return Err(SleepError::MissingArgument);
@@ -201,6 +188,19 @@ unsafe fn main_impl(args: &[*const c_char]) -> Result<(), SleepError> {
 
     sleep(Duration::from_secs(sleep_duration_int));
     Ok(())
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
+    let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+
+    match unsafe { main_impl(args) } {
+        Ok(()) => EXIT_SUCCESS,
+        Err(err) => {
+            report_error(err);
+            EXIT_FAILURE
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
