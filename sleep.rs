@@ -19,6 +19,12 @@ const SYS_WRITE: c_long = 1;
 const SYS_EXIT: c_long = 60;
 const SYS_NANOSLEEP: c_long = 35;
 
+enum SleepError {
+    MissingArgument,
+    NonUtf8,
+    InvalidInterval(*const c_char),
+}
+
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {
@@ -127,9 +133,36 @@ fn print(s: &str) {
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    match unsafe { main_impl(core::slice::from_raw_parts(argv, argc as usize)) } {
-        Ok(_) => EXIT_SUCCESS,
-        Err(_) => EXIT_FAILURE,
+    let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+
+    match unsafe { main_impl(args) } {
+        Ok(()) => EXIT_SUCCESS,
+        Err(err) => {
+            report_error(err);
+            EXIT_FAILURE
+        }
+    }
+}
+
+fn report_error(err: SleepError) {
+    match err {
+        SleepError::MissingArgument => {
+            print("Usage: sleep NUMBER\nPause for NUMBER seconds\n");
+        }
+        SleepError::NonUtf8 => {
+            print("sleep: invalid input - non-UTF8 bytes not supported\n");
+        }
+        SleepError::InvalidInterval(ptr) => unsafe {
+            // SAFETY:
+            // `ptr` originates from argv[1], which is guaranteed
+            // valid and null-terminated for the program lifetime.
+            let bytes = bytes_from_nullterminated(ptr);
+            let s = core::str::from_utf8_unchecked(bytes);
+
+            print("sleep: invalid time interval '");
+            print(s);
+            print("'\n");
+        },
     }
 }
 
@@ -153,28 +186,18 @@ unsafe fn bytes_from_nullterminated<'a>(ptr: *const c_char) -> &'a [u8] {
     unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
 }
 
-unsafe fn main_impl(args: &[*const c_char]) -> Result<(), ()> {
+unsafe fn main_impl(args: &[*const c_char]) -> Result<(), SleepError> {
     let Some(&sleep_duration) = args.get(1) else {
-        print("Usage: sleep NUMBER\nPause for NUMBER seconds\n");
-        return Err(());
+        return Err(SleepError::MissingArgument);
     };
 
     let sleep_duration_bytes = unsafe { bytes_from_nullterminated(sleep_duration) };
+    let sleep_duration_str =
+        core::str::from_utf8(sleep_duration_bytes).map_err(|_| SleepError::NonUtf8)?;
 
-    let Ok(sleep_duration_str) = str::from_utf8(sleep_duration_bytes) else {
-        print("sleep: invalid input - non-UTF8 bytes not supported\n");
-        return Err(());
-    };
-
-    let sleep_duration_int: u64 = match sleep_duration_str.parse() {
-        Ok(n) => n,
-        Err(_) => {
-            print("sleep: invalid time interval '");
-            print(sleep_duration_str);
-            print("'\n");
-            return Err(());
-        }
-    };
+    let sleep_duration_int: u64 = sleep_duration_str
+        .parse()
+        .map_err(|_| SleepError::InvalidInterval(sleep_duration))?;
 
     sleep(Duration::from_secs(sleep_duration_int));
     Ok(())
