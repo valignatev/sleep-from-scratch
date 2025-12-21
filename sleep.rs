@@ -47,7 +47,7 @@ unsafe fn syscall1(number: c_long, arg1: c_long) -> c_long {
             in("rdi") arg1,
             lateout("rcx") _,
             lateout("r11") _,
-            options(nostack, preserves_flags)
+            options(nostack)
         );
     }
     result
@@ -64,7 +64,7 @@ unsafe fn syscall2(number: c_long, arg1: c_long, arg2: c_long) -> c_long {
             in("rsi") arg2,
             lateout("rcx") _,
             lateout("r11") _,
-            options(nostack, preserves_flags)
+            options(nostack)
         );
     }
     result
@@ -82,7 +82,7 @@ unsafe fn syscall3(number: c_long, arg1: c_long, arg2: c_long, arg3: c_long) -> 
             in("rdx") arg3,
             lateout("rcx") _,
             lateout("r11") _,
-            options(nostack, preserves_flags)
+            options(nostack)
         );
     }
     result
